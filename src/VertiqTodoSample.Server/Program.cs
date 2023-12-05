@@ -13,7 +13,6 @@ var application = VertiqWebApplicationBuilder
     )
     .UseServerContext(builder)
     .UseModule<VertiqTodoSampleServerModule>()
-    .UseModuleWhenDevelopment<VertiqDiagnosticModule>()
     .BuildApplication();
 
 var app = builder.Build();
