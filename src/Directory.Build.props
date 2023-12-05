@@ -1,0 +1,29 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Vertiq.Core" />
+    <PackageReference Include="Vertiq.Components" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="VertiqTodoSample" />
+
+    <Using Include="Vertiq" />
+    <Using Include="Vertiq.Components" />
+    <Using Include="Vertiq.Icons" />
+    
+    <Using Include="Microsoft.Extensions.Configuration" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+</Project>
