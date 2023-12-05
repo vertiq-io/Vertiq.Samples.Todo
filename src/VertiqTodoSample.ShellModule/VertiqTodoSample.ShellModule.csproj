@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Razor">
+﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -6,9 +6,9 @@
 
   <ItemGroup>
     <PackageReference Include="Vertiq.Templates.MudBlazor" />
-  </ItemGroup>
-
-  <ItemGroup>
+    <PackageReference Include="Vertiq.Features.Fluxor.Conventions" />
+    <PackageReference Include="Vertiq.DB.Xpo" />
+    <PackageReference Include="Vertiq.IconPack.MaterialDesignIcons" />
   </ItemGroup>
 
 </Project>

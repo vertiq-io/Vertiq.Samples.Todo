@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -12,6 +12,8 @@
     <PackageReference Include="Vertiq.Hosting.BlazorServer" />
     <PackageReference Include="Vertiq.Transport.Http.Server" />
     <PackageReference Include="Vertiq.Serialization.Newtonsoft.Json" />
+    <PackageReference Include="Vertiq.Features.Xpo.Server" />
+    <PackageReference Include="Vertiq.Modules.DiagnosticModule" />
   </ItemGroup>
 
   <ItemGroup>

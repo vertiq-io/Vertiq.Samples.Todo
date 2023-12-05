@@ -1,5 +1,247 @@
 @page "/"
 
-<VH1>Hello World!</VH1>
+@inherits FluxorComponent
 
-<VH2>It's a Vertifiq day! Isn't it?</VH2>
+@* We inject the state so we can use it in our component. *@
+@inject IState<MediatorState<TodoViewModel>> State
+@* We get the unit of work to interact with the database. *@
+@inject IUnitOfWorkFactory UnitOfWorkFactory
+
+@* We fetch the data once when the component is initialized *@
+<VDispatchOnce Dispatch="new FetchRequest(State.Value.Data)" />
+
+<VStackLayout Orientation="VOrientation.Vertical"
+              Gap="3"
+              Style="margin: 3rem auto; max-width: 30rem;">
+
+    <VH4 TextAlign="VTextAlign.Center">
+        Todo
+    </VH4>
+
+    <VStackLayout Orientation="VOrientation.Vertical"
+                  Gap="2">
+
+        @* We use the VEditor to display the input field for the new Todo item *@
+        <VEditor Model="@State.Value.Data"
+                 For="m => m.NewTodo" />
+
+        <VIf Value="@State.Value.HasErrors">
+            <VDiv Style="color: orangered">
+                @State.Value.Exception!.Message
+            </VDiv>
+        </VIf>
+
+        <VStackLayout Orientation="VOrientation.Horizontal"
+                      Gap="2"
+                      Justify="VJustify.End">
+            @* We use the VButton to refresh the Todo list *@
+            <VButton Color="VColor.Primary"
+                     StartIcon="MdiIcons.Refresh"
+                     Dispatcher="() => new FetchRequest(State.Value.Data)"
+                     Tooltip="Add a new Todo">
+                Refresh
+            </VButton>
+
+            @* We use the VButton to submit the new Todo item *@
+            <VButton Color="VColor.Success"
+                     StartIcon="MdiIcons.Plus"
+                     Dispatcher="() => new AddRequest(State.Value.Data.NewTodo)">
+                Add
+            </VButton>
+
+        </VStackLayout>
+    </VStackLayout>
+
+    <VIf Value="@(State.Value.Data.Items.Length > 0)">
+        <VTable>
+            <VTBody>
+                <VForEach Items="@State.Value.Data.Items" Context="todo">
+                    <VTR Styles="@((s) => s.AddStyle("text-decoration", "line-through", todo.Done))">
+                        <VTD>@todo.Description</VTD>
+                        <VTD>
+                            <VStackLayout Justify="VJustify.End">
+                                @* We use the VBoolCheckbox to toggle the Done state of the Todo item *@
+                                <VEditor Model="todo"
+                                         For="m => m.Done"
+                                         Tooltip="Toggle Done"
+                                         DispatcherValueChanged="(_) => new ToggleDoneRequest(todo.Id)" />
+                            </VStackLayout>
+                        </VTD>
+                        <VTD>
+                            <VStackLayout Justify="VJustify.End">
+                                <VIconButton Color="VColor.Error"
+                                             Icon="MdiIcons.Delete"
+                                             Text="Delete"
+                                             Tooltip="Delete Todo"
+                                             Dispatcher="() => new DeleteRequest(todo.Id)" />
+                            </VStackLayout>
+                        </VTD>
+                    </VTR>
+                </VForEach>
+            </VTBody>
+        </VTable>
+    </VIf>
+</VStackLayout>
+
+@code {
+    public sealed record TodoData(int Id, string Description, bool Done);
+
+    //In this simple example, we use a mixed input/output ViewModel
+    //If the ViewModel becomes more complex, it's better to split it into an input and output ViewModel
+    public sealed record TodoViewModel
+    {
+        [VLabel("New Todo")]
+        public string NewTodo { get; set; } = string.Empty;
+
+        public TodoData[] Items { get; init; } = Array.Empty<TodoData>();
+    }
+
+    //Create a request to fetch the todos, we return a TodoViewModel
+    //We get an optional ViewModel parameter, so we can pass in the current view model, if we have one
+    public sealed record FetchRequest(TodoViewModel? ViewModel = null) : Request<TodoViewModel>
+    {
+        //A request must always have only 1 handler, so we create the handler as nested class
+        //We inject the unit of work factory from DI
+        public sealed record Handler(IUnitOfWorkFactory UnitOfWorkFactory) : RequestHandler<FetchRequest, TodoViewModel>
+        {
+            public override async ValueTask<Response<TodoViewModel>> Handle(FetchRequest request, CancellationToken cancellationToken)
+            {
+                //We create a unit of work for the YTask type, make sure we dispose it when we are done
+                using var uow = await UnitOfWorkFactory.CreateUnitOfWork<DbTodo>();
+
+                //We fetch all the todos, order them by the Oid and select them into a TodoData object
+                var todos = await uow.Query<DbTodo>()
+                    .OrderBy(x => x.Oid)
+                    .Select(x => new TodoData(x.Oid, x.Task ?? "", x.Done))
+                    .ToArrayAsync(cancellationToken);
+
+                //We return a copy of the TodoViewModel with the new data, if it exists
+                //We don't want to mutate the original view model
+                //We don't replace the NewTodo so when the user refreshes, the new todo is still there
+                return (request.ViewModel ?? new TodoViewModel()) with
+                    {
+                        Items = todos
+                    };
+            }
+        }
+    }
+
+    //We add a new Todo. We only need the description from the UI
+    public sealed record AddRequest(string Description) : Request<TodoViewModel>
+    {
+        //We inject the unit of work factory from DI
+        public sealed record Handler(IUnitOfWorkFactory UnitOfWorkFactory) : RequestHandler<AddRequest, TodoViewModel>
+        {
+            public override async ValueTask<Response<TodoViewModel>> Handle(AddRequest request, CancellationToken cancellationToken)
+            {
+                //We validate the description
+                if (string.IsNullOrEmpty(request.Description))
+                {
+                    return new Response<TodoViewModel>.Error(new Exception("Description is required"));
+                }
+
+                //We create a unit of work for the YTask type, make sure we dispose it when we are done
+                using var uow = await UnitOfWorkFactory.CreateUnitOfWork<DbTodo>();
+
+                //We create a new todo
+                var todo = new DbTodo(uow)
+                    {
+                        Task = request.Description,
+                    };
+
+                //We save the todo and commit the changes
+                await uow.CommitChangesAsync(cancellationToken);
+
+                //We return the result of the fetch handler
+                //But create a new view model, so the new todo description is empty
+                var fetchHandler = new FetchRequest.Handler(UnitOfWorkFactory);
+                return await fetchHandler.Handle(new(), cancellationToken);
+            }
+        }
+    }
+
+    //We toggle the done state of a todo, we only need the id from the UI
+    public sealed record ToggleDoneRequest(int TodoId) : Request<TodoViewModel>
+    {
+        public sealed record Handler(IUnitOfWorkFactory UnitOfWorkFactory) : RequestHandler<ToggleDoneRequest, TodoViewModel>
+        {
+            public override async ValueTask<Response<TodoViewModel>> Handle(ToggleDoneRequest request, CancellationToken cancellationToken)
+            {
+                //We create a unit of work for the YTask type, make sure we dispose it when we are done
+                using var uow = await UnitOfWorkFactory.CreateUnitOfWork<DbTodo>();
+
+                //We fetch the todo by the id
+                var todo = await uow.GetObjectByKeyAsync<DbTodo>(request.TodoId, cancellationToken);
+
+                //If the todo is not found, we return an error
+                if (todo is null)
+                {
+                    return new Response<TodoViewModel>.Error(new Exception("Todo not found"));
+                }
+
+                //We toggle the done state
+                todo.Done = !todo.Done;
+
+                //We save and commit the changes
+                await uow.SaveAsync(todo, cancellationToken);
+                await uow.CommitChangesAsync(cancellationToken);
+
+                //We return the result of the fetch handler
+                var fetchHandler = new FetchRequest.Handler(UnitOfWorkFactory);
+                return await fetchHandler.Handle(new(), cancellationToken);
+            }
+        }
+    }
+
+    //We delete a todo, we only need the id from the UI
+    public sealed record DeleteRequest(int TodoId) : Request<TodoViewModel>
+    {
+        //We inject the unit of work factory from DI
+        public sealed record Handler(IUnitOfWorkFactory UnitOfWorkFactory) : RequestHandler<DeleteRequest, TodoViewModel>
+        {
+            public override async ValueTask<Response<TodoViewModel>> Handle(DeleteRequest request, CancellationToken cancellationToken)
+            {
+                //We create a unit of work for the YTask type, make sure we dispose it when we are done
+                using var uow = await UnitOfWorkFactory.CreateUnitOfWork<DbTodo>();
+
+                //We fetch the todo by the id
+                var todo = await uow.GetObjectByKeyAsync<DbTodo>(request.TodoId, cancellationToken);
+
+                //If the todo is not found, we return an error
+                if (todo is null)
+                {
+                    return new Response<TodoViewModel>.Error(new Exception("Task not found"));
+                }
+
+                //We delete the todo and commit the changes
+                await uow.DeleteAsync(todo, cancellationToken);
+                await uow.CommitChangesAsync(cancellationToken);
+
+                //We return the result of the fetch handler
+                var fetchHandler = new FetchRequest.Handler(UnitOfWorkFactory);
+                return await fetchHandler.Handle(new(), cancellationToken);
+            }
+        }
+    }
+
+    [Persistent("Todo")]
+    public sealed class DbTodo : XPObject
+    {
+        public DbTodo(Session session) : base(session) { }
+
+        private string? task;
+        [Size(SizeAttribute.Unlimited)]
+        public string? Task
+        {
+            get => task;
+            set => SetPropertyValue(nameof(Task), ref task, value);
+        }
+
+        private bool done;
+        public bool Done
+        {
+            get => done;
+            set => SetPropertyValue(nameof(Done), ref done, value);
+        }
+    }
+}
